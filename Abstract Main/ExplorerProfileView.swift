@@ -103,4 +103,3 @@ struct ExplorerProfileView_Previews: PreviewProvider {
             .environmentObject(SavedStore())
     }
 }
-

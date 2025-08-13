@@ -16,6 +16,7 @@ enum ProfileFeed: String, CaseIterable, Identifiable {
 
 struct CreatorProfileVariantY: View {
     @EnvironmentObject private var savedStore: SavedStore
+    @EnvironmentObject private var postsStore: PostsStore   // <-- added
 
     // MARK: – Editable profile data
     @State private var fullName = "HDV"
@@ -249,9 +250,15 @@ struct CreatorProfileVariantY: View {
                           spacing: spacing) {
                     ForEach(0..<postCount, id:\.self) { idx in
                         NavigationLink {
-                            PostDetailView(posts: demoPosts)
-                                .navigationBarHidden(true)
-                                .navigationBarBackButtonHidden(true)
+                            // Bind PostDetailView to the shared PostsStore
+                            PostDetailView(
+                                posts: Binding(
+                                    get: { postsStore.posts },
+                                    set: { postsStore.posts = $0 }
+                                )
+                            )
+                            .navigationBarHidden(true)
+                            .navigationBarBackButtonHidden(true)
                         } label: {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Color.gray.opacity(0.3))
@@ -337,9 +344,43 @@ struct CreatorProfileVariantY: View {
             .offset(x: sidebarWidth + offset)
 
         case .saved:
-            postGrid(for: savedStore.savedPosts,
-                     fullWidth: fullWidth,
-                     offset: offset)
+            let heights: [CGFloat] = [120, 160, 140]
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
+                          spacing: spacing) {
+                    // Saved posts
+                    ForEach(savedStore.savedPosts) { post in
+                        NavigationLink {
+                            // Open a constant binding for now (keeps your current SavedStore as-is)
+                            PostDetailView(posts: .constant([post]))
+                                .navigationBarHidden(true)
+                                .navigationBarBackButtonHidden(true)
+                        } label: {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: heights.randomElement()!)
+                        }
+                    }
+                    // Saved clips
+                    ForEach(savedStore.savedClips.indices, id: \.self) { idx in
+                        let clip = savedStore.savedClips[idx]
+                        Button {
+                            // Launch reels view at the selected saved clip
+                            reelStart = idx
+                            showReels = true
+                        } label: {
+                            // Use AsyncImage here if you want a real thumbnail; this is a placeholder box
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: heights.randomElement()!)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(spacing)
+            }
+            .frame(width: visibleW - handleWidth / 2)
+            .offset(x: sidebarWidth + offset)
         }
     }
 
@@ -358,7 +399,7 @@ struct CreatorProfileVariantY: View {
                       spacing: spacing) {
                 ForEach(posts) { post in
                     NavigationLink {
-                        PostDetailView(posts: [post])
+                        PostDetailView(posts: .constant([post])) // keep stable here as well
                             .navigationBarHidden(true)
                             .navigationBarBackButtonHidden(true)
                     } label: {
@@ -443,6 +484,7 @@ struct CreatorProfileVariantY_Previews: PreviewProvider {
     static var previews: some View {
         CreatorProfileVariantY()
             .environmentObject(SavedStore())
+            .environmentObject(PostsStore()) // <-- added for preview to compile
             .previewInterfaceOrientation(.portrait)
     }
 }

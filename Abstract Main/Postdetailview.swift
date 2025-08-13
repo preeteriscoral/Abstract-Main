@@ -19,8 +19,10 @@ struct Post: Identifiable {
   var commentList: [Comment]
   var caption: String
   var datePosted: String
+  var isLiked: Bool = false   // <-- added so like state persists
 }
 
+// (keep this only for previews)
 let demoPosts: [Post] = (1...5).map { i in
   Post(
     images: [
@@ -31,7 +33,8 @@ let demoPosts: [Post] = (1...5).map { i in
     likes: Int.random(in: 0...500),
     commentList: [],
     caption: "This is the caption for post #\(i).",
-    datePosted: "\(Int.random(in: 1...23))h"
+    datePosted: "\(Int.random(in: 1...23))h",
+    isLiked: false
   )
 }
 
@@ -41,7 +44,9 @@ let demoPosts: [Post] = (1...5).map { i in
 struct PostDetailView: View {
   @EnvironmentObject private var savedStore: SavedStore
   @Environment(\.dismiss) private var dismiss
-  let posts: [Post]
+
+  // CHANGED: make posts a Binding so edits persist to the shared store
+  @Binding var posts: [Post]
 
   var body: some View {
     NavigationStack {
@@ -65,14 +70,14 @@ struct PostDetailView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
           LazyVStack(spacing: 0) {
-            ForEach(posts) { post in
-              SinglePostView(post: post)
+            ForEach(posts.indices, id: \.self) { i in
+              SinglePostView(post: $posts[i]) // pass a binding to each post
                 .environmentObject(savedStore)
                 .frame(
                   width: UIScreen.main.bounds.width,
                   height: UIScreen.main.bounds.height
-                    - UIApplication.shared.windows.first!.safeAreaInsets.top
-                    - UIApplication.shared.windows.first!.safeAreaInsets.bottom
+                    - (UIApplication.shared.windows.first?.safeAreaInsets.top ?? 0)
+                    - (UIApplication.shared.windows.first?.safeAreaInsets.bottom ?? 0)
                     - 44
                 )
             }
@@ -91,15 +96,10 @@ struct SinglePostView: View {
   @EnvironmentObject private var savedStore: SavedStore
 
   @State private var page = 0
-  @State private var post: Post
-  @State private var isLiked = false
+  @Binding var post: Post            // <-- CHANGED: binding, not local @State
   @State private var fireScale: CGFloat = 1
   @State private var showComments = false
   @State private var showShareSheet = false
-
-  init(post: Post) {
-    self._post = State(initialValue: post)
-  }
 
   private var shareURL: URL {
     URL(string: "https://abstract.app/post/\(post.id)")!
@@ -136,7 +136,7 @@ struct SinglePostView: View {
         // Like
         VStack(spacing: 4) {
           Button { toggleLike() } label: {
-            Image(systemName: isLiked ? "flame.fill" : "flame")
+            Image(systemName: post.isLiked ? "flame.fill" : "flame")
               .font(.title2)
               .foregroundColor(.red)
               .scaleEffect(fireScale)
@@ -207,8 +207,8 @@ struct SinglePostView: View {
 
   private func toggleLike() {
     withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-      isLiked.toggle()
-      post.likes += isLiked ? 1 : -1
+      post.isLiked.toggle()                 // <-- persists in the model
+      post.likes += post.isLiked ? 1 : -1   // <-- persists in the model
       fireScale = 1.4
     }
     withAnimation(.spring(response: 0.3, dampingFraction: 0.8).delay(0.1)) {
@@ -432,7 +432,7 @@ extension Set where Element: Hashable {
 // MARK: – Preview
 struct PostDetailView_Previews: PreviewProvider {
   static var previews: some View {
-    PostDetailView(posts: demoPosts)
+    PostDetailView(posts: .constant(demoPosts))
       .environmentObject(SavedStore())
       .previewInterfaceOrientation(.portrait)
   }

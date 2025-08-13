@@ -17,6 +17,15 @@ struct ClipModel: Identifiable {
     let caption: String
 }
 
+// Comment model for reels
+struct ClipComment: Identifiable {
+    let id = UUID()
+    var username: String
+    var text: String
+    var likes: Int = 0
+    var isLiked: Bool = false
+    var replies: [ClipComment] = []
+}
 struct FootageReelsView: View {
     @EnvironmentObject private var savedStore: SavedStore
 
@@ -26,7 +35,7 @@ struct FootageReelsView: View {
     @State private var players: [AVPlayer]
     @State private var isLiked: [Bool]
     @State private var heartPop: Set<UUID> = []
-
+    @State private var clipComments: [[ClipComment]]
     @State private var showingComments = false
     @State private var commentsIndex = 0
 
@@ -52,6 +61,7 @@ struct FootageReelsView: View {
         }
         self._players = State(initialValue: built)
         self._isLiked = State(initialValue: Array(repeating: false, count: clips.count))
+        self._clipComments = State(initialValue: clips.map { _ in [] })
     }
 
     var body: some View {
@@ -87,7 +97,7 @@ struct FootageReelsView: View {
             .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             .ignoresSafeArea()
             .sheet(isPresented: $showingComments) {
-                CommentsPlaceholderView(clip: clips[commentsIndex])
+                ClipCommentsView(comments: $clipComments[commentsIndex])
             }
         }
     }
@@ -108,8 +118,7 @@ struct FootageReelsView: View {
                         .foregroundColor(.white)
                 }
                 .padding(.leading, 16)
-                // Use exactly the safe-area top inset so the button sits up high
-                .padding(.top, topInset - 50)   // move it 8pts higher
+                .padding(.top, topInset - 50)
                 Spacer()
             }
 
@@ -129,7 +138,7 @@ struct FootageReelsView: View {
 
                 Spacer()
 
-                // Action buttons
+                // Action buttons (exactly one of each)
                 VStack(spacing: 24) {
                     // Like
                     Button {
@@ -140,20 +149,10 @@ struct FootageReelsView: View {
                         }
                     } label: {
                         Image(systemName: isLiked[idx] ? "flame.fill" : "flame")
-                            .resizable()
-                            .frame(width: 28, height: 28)
-                            .foregroundColor(.white)
+                            .font(.title2)          // Consistent sizing
+                            .foregroundColor(.red)  // Same red as PostDetailView
                     }
-
-                    // Save
-                    Button {
-                        savedStore.toggle(clip)
-                    } label: {
-                        Image(systemName: savedStore.isSaved(clip) ? "bookmark.fill" : "bookmark")
-                            .resizable()
-                            .frame(width: 26, height: 28)
-                            .foregroundColor(.white)
-                    }
+                    .buttonStyle(.plain)
 
                     // Comments
                     Button {
@@ -161,10 +160,10 @@ struct FootageReelsView: View {
                         showingComments = true
                     } label: {
                         Image(systemName: "bubble.right")
-                            .resizable()
-                            .frame(width: 26, height: 26)
+                            .font(.title2)
                             .foregroundColor(.white)
                     }
+                    .buttonStyle(.plain)
 
                     // Share
                     Button {
@@ -177,22 +176,33 @@ struct FootageReelsView: View {
                             .present(sheet, animated: true)
                     } label: {
                         Image(systemName: "square.and.arrow.up")
-                            .resizable()
-                            .frame(width: 26, height: 26)
+                            .font(.title2)
                             .foregroundColor(.white)
                     }
+                    .buttonStyle(.plain)
+                    
+                    // Save
+                    Button {
+                        savedStore.toggle(clip)
+                    } label: {
+                        Image(systemName: savedStore.isSaved(clip) ? "bookmark.fill" : "bookmark")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+
+
                 }
                 .padding(.trailing, 16)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, bottomInset + 12)
         }
-        // — Gestures & heart pop —
         .contentShape(Rectangle())
+        // Gestures & heart pop overlay remain unchanged
         .onTapGesture(count: 1) {
             let p = players[idx]
-            if p.timeControlStatus == .playing { p.pause() }
-            else { p.play() }
+            if p.timeControlStatus == .playing { p.pause() } else { p.play() }
         }
         .onTapGesture(count: 2) {
             isLiked[idx].toggle()
@@ -207,8 +217,9 @@ struct FootageReelsView: View {
                     .animation(.spring(), value: heartPop)
             }
         }
-    }
-}
+    } // <-- closes overlayContent
+
+} // <-- closes FootageReelsView
 
 // MARK: – Placeholder comments sheet
 struct CommentsPlaceholderView: View {
@@ -252,6 +263,192 @@ struct FootageReelsView_Previews: PreviewProvider {
         FootageReelsView(clips: demoClips, startIndex: 0)
             .environmentObject(SavedStore())
             .previewDevice("iPhone 14 Pro")
+    }
+}
+// Full comments UI for reels
+struct ClipCommentsView: View {
+    @Binding var comments: [ClipComment]
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var commentText = ""
+    @State private var replyToID: UUID? = nil
+    @State private var expandedComments: Set<UUID> = []
+    @State private var replyTexts: [UUID: String] = [:]
+
+    private func binding(for id: UUID) -> Binding<String> {
+        Binding(
+            get: { replyTexts[id, default: ""] },
+            set: { replyTexts[id] = $0 }
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(comments.indices, id: \.self) { idx in
+                            ClipCommentRow(
+                                comment: $comments[idx],
+                                expandedComments: $expandedComments,
+                                replyToID: $replyToID,
+                                replyText: binding(for: comments[idx].id),
+                                onDelete: { comments.remove(at: idx) },
+                                onToggleLike: {
+                                    comments[idx].isLiked.toggle()
+                                    comments[idx].likes += comments[idx].isLiked ? 1 : -1
+                                },
+                                onToggleReplyLike: { rIdx in
+                                    comments[idx].replies[rIdx].isLiked.toggle()
+                                    comments[idx].replies[rIdx].likes += comments[idx].replies[rIdx].isLiked ? 1 : -1
+                                },
+                                onSubmitReply: submitReply(parentID:text:)
+                            )
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                Divider()
+
+                HStack {
+                    TextField("Add a comment…", text: $commentText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    Button("Post") {
+                        guard !commentText.isEmpty else { return }
+                        comments.append(ClipComment(username: "@you", text: commentText))
+                        commentText = ""
+                    }
+                    .disabled(commentText.isEmpty)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+            }
+            .navigationTitle("Comments")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func submitReply(parentID: UUID, text: String) {
+        guard !text.isEmpty else { return }
+        if let i = comments.firstIndex(where: { $0.id == parentID }) {
+            comments[i].replies.append(ClipComment(username: "@you", text: text))
+        }
+        expandedComments.insert(parentID)
+        replyToID = nil
+        replyTexts[parentID] = ""
+    }
+}
+
+// A single comment row with likes, replies and delete actions
+struct ClipCommentRow: View {
+    @Binding var comment: ClipComment
+    @Binding var expandedComments: Set<UUID>
+    @Binding var replyToID: UUID?
+    @Binding var replyText: String
+    var onDelete: () -> Void
+    var onToggleLike: () -> Void
+    var onToggleReplyLike: (_ replyIndex: Int) -> Void
+    var onSubmitReply: (_ parentID: UUID, _ text: String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Main comment line
+            HStack(alignment: .top, spacing: 8) {
+                Circle()
+                    .fill(Color.gray.opacity(0.4))
+                    .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(comment.username).font(.subheadline).bold()
+                    Text(comment.text).font(.body)
+                    HStack(spacing: 8) {
+                        Button(action: onToggleLike) {
+                            Image(systemName: comment.isLiked ? "flame.fill" : "flame")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        Text("\(comment.likes)").font(.caption2).foregroundColor(.secondary)
+                        Button { replyToID = comment.id } label: {
+                            Text("Reply").font(.caption2).foregroundColor(.blue)
+                        }
+                        if !comment.replies.isEmpty {
+                            Button {
+                                if expandedComments.contains(comment.id) {
+                                    expandedComments.remove(comment.id)
+                                } else {
+                                    expandedComments.insert(comment.id)
+                                }
+                            } label: {
+                                Image(systemName: expandedComments.contains(comment.id) ? "chevron.down" : "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2, perform: onToggleLike)
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+
+            // Reply input
+            if replyToID == comment.id {
+                HStack {
+                    TextField("Reply…", text: $replyText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    Button("Post") {
+                        onSubmitReply(comment.id, replyText)
+                    }
+                    .disabled(replyText.isEmpty)
+                    Button("Cancel") {
+                        replyToID = nil
+                        replyText = ""
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .padding(.leading, 40)
+            }
+
+            // Replies
+            if expandedComments.contains(comment.id) {
+                ForEach(comment.replies.indices, id: \.self) { rIdx in
+                    let reply = comment.replies[rIdx]
+                    HStack(alignment: .top, spacing: 8) {
+                        Spacer().frame(width: 40)
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 24, height: 24)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(reply.username).font(.footnote).bold()
+                            Text(reply.text).font(.footnote)
+                            HStack(spacing: 8) {
+                                Button {
+                                    onToggleReplyLike(rIdx)
+                                } label: {
+                                    Image(systemName: reply.isLiked ? "flame.fill" : "flame")
+                                        .font(.caption2)
+                                        .foregroundColor(.red)
+                                }
+                                Text("\(reply.likes)").font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 #endif
