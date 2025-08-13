@@ -22,6 +22,7 @@ struct ExplorerProfileView: View {
             .navigationTitle("Explorer Profile")
             .listStyle(InsetGroupedListStyle())
         }
+        .environmentObject(savedStore)
     }
 
     // MARK: – Section 1: Purchase History
@@ -51,12 +52,10 @@ struct ExplorerProfileView: View {
                     .foregroundColor(.secondary)
             } else {
                 ForEach(saved) { post in
-                    NavigationLink(
-                        destination:
-                            // Destination is PostDetailView(posts: [post])
-                            PostDetailView(posts: [post])
-                                .environmentObject(savedStore)
-                    ) {
+                    // Use the closure-based initializer and omit .environmentObject
+                    NavigationLink {
+                        PostDetailView(posts: [post])
+                    } label: {
                         HStack {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color.gray.opacity(0.3))
@@ -66,8 +65,6 @@ struct ExplorerProfileView: View {
                                         .foregroundColor(.white)
                                         .font(.caption)
                                 )
-
-                            // ← Use post.caption (since `Post` has a `caption` property, not `title`)
                             Text(post.caption)
                                 .lineLimit(1)
                                 .font(.body)
@@ -103,3 +100,4 @@ struct ExplorerProfileView_Previews: PreviewProvider {
             .environmentObject(SavedStore())
     }
 }
+

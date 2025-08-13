@@ -249,13 +249,13 @@ struct CommentsView: View {
   @State private var expandedComments: Set<UUID> = []
   @State private var replyTexts: [UUID:String] = [:]
 
-  private func binding(for id: UUID) -> Binding<String> {
-    Binding(
-      get: { replyTexts[id, default: ""] },
-      set: { replyTexts[id] = $0 }
-    )
-  }
-
+    private func binding(for id: UUID) -> Binding<String> {
+        Binding<String>(
+            get: { replyTexts[id, default: ""] },
+            set: { replyTexts[id] = $0 }
+        )
+    }
+    
   var body: some View {
     NavigationStack {
       VStack(spacing: 0) {
